@@ -1,8 +1,11 @@
+.gitignore
 Changes
-MANIFEST
-Makefile.PL
-README
+couchdb_load.PL
 lib/CouchDB/Helper.pm
+Makefile.PL
+MANIFEST
+README
 t/00-load.t
+t/boilerplate.t
 t/pod-coverage.t
 t/pod.t
