@@ -3,6 +3,10 @@ package CouchDB::Helper;
 use warnings;
 use strict;
 
+use Cwd;
+
+use CouchDB::Client;
+
 =head1 NAME
 
 CouchDB::Helper - make developing with CouchDB easier
@@ -13,6 +17,17 @@ our $VERSION = '0.01';
 
 use base 'Exporter';
 our @EXPORT = qw[install_to_couchdb];
+
+my $topdir = cwd();
+
+sub install_to_couchdb {
+    my $url = shift;
+
+    opendir my $design, $topdir . '/_design'
+      or die "Failed to open $topdir/_design: $!\n";
+    my @toplevel = grep { /^\w+$/ } readdir($design);
+
+}
 
 =head1 SYNOPSIS
 
@@ -55,4 +70,4 @@ under the same terms as Perl itself.
 
 =cut
 
-1; # End of CouchDB::Helper
+1;    # End of CouchDB::Helper
