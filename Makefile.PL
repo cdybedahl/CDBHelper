@@ -10,7 +10,6 @@ WriteMakefile(
     ($ExtUtils::MakeMaker::VERSION >= 6.3002
       ? ('LICENSE'=> 'perl')
       : ()),
-    PL_FILES            => {'couchdb_load.pl' => 'http://127.0.0.1:5984/testdb'},
     PREREQ_PM => {
         'Test::More' => 0,
         'CouchDB::Client' => 0.09,
