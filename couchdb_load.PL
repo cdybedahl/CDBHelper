@@ -5,6 +5,4 @@ use warnings;
 
 use CouchDB::Helper;
 
-my $dburl = shift(@ARGV);
-
-die $dburl;
+install_to_couchdb('http://127.0.0.1:5984/testdb');
