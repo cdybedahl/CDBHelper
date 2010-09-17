@@ -8,3 +8,6 @@ pm_to_blib*
 .lwpcookies
 CouchDB-Helper-*
 cover_db
+_design
+*~
+*.bak
