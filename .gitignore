@@ -10,3 +10,4 @@ CouchDB-Helper-*
 cover_db
 *~
 *.bak
+*.tmp
