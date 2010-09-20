@@ -1,52 +1,89 @@
-CouchDB-Helper
+=head1 CouchDB::Helper
 
-The README is used to introduce the module and provide instructions on
-how to install the module, any machine dependencies it may have (for
-example C compilers and installed libraries) and any other information
-that should be provided before the module is installed.
+This is a module meant to assist when developing applications that use CouchDB. 
 
-A README file is required for CPAN modules since CPAN extracts the README
-file from a module distribution so that people browsing the archive
-can use it to get an idea of the module's uses. It is usually a good idea
-to provide version information here so that people can decide whether
-fixes for the module are worth downloading.
+A vital part of any such application is its design documents. These have a
+predictable and mostly unchanging structure, and a few active parts written in
+JavaScript. Since mixing programming languages in the same file is never fun,
+the idea here is to let the developer keep those JavaScript parts in separate
+files, and have this module store them in CouchDB when "make" is run.
+
+=head1 Usage
+
+=over
+
+=item 1
+
+In your module's top-level directory, create a file with a name something like couchdb_load.PL.
+
+=item 2
+
+Edit Makefile.PL. If it doesn't have a PL_FILES key at all (not even an
+empty one) and you used a filename that ends in .PL, then it's fine. If it has
+a PL_FILES key or you didn't use a PL suffix, you need to add the filename as
+a key to hash for the PL_FILES key. It doesn't matter what value you give the
+key, as the script will ignore it. It must, however, be syntactically valid as
+a target in a Makefile. So it might look something like this:
+
+  PL_FILES => {'couchdb_load.pl' => 'couchdb_load'},
+  
+That is only one line out of many, of course. In case of doubt, read the
+documentation for L<ExtUtils::MakeMaker>.
+
+=item 3
+
+Edit the couchdb_load.PL file. It should be a runnable script, so make sure
+to have a correct #! line at the start and execute permissions set. After the
+hashbang line, the entire script can look like this:
+
+  use CouchDB::Helper;
+
+  install_to_couchdb('http://127.0.0.1:5984/');
+
+The install_to_couchdb() function will then read stuff from disk and push it
+to the CouchDB instance at the given URL. 
+
+=back
+
+=head1 File Structure
+
+ couchdb
+ |-- otherdb
+ |   `-- _design
+ |       `-- ddoc1
+ |           |-- _rev
+ |           `-- views
+ |               `-- test
+ |                   |-- map.js
+ |                   `-- reduce.js
+ `-- testdb
+     `-- _design
+         |-- ddoc1
+         |   |-- _rev
+         |   `-- views
+         |       `-- test
+         |           |-- map.js
+         |           `-- reduce.js
+         `-- ddoc2
+             |-- _rev
+             `-- views
+                 |-- test
+                 |   |-- map.js
+                 |   `-- reduce.js
+                 `-- tset
+                     |-- map.js
+                     `-- reduce.js
 
 
-INSTALLATION
-
-To install this module, run the following commands:
-
-	perl Makefile.PL
-	make
-	make test
-	make install
-
-SUPPORT AND DOCUMENTATION
-
-After installing, you can find documentation for this module with the
-perldoc command.
-
-    perldoc CouchDB::Helper
-
-You can also look for information at:
-
-    RT, CPAN's request tracker
-        http://rt.cpan.org/NoAuth/Bugs.html?Dist=CouchDB-Helper
-
-    AnnoCPAN, Annotated CPAN documentation
-        http://annocpan.org/dist/CouchDB-Helper
-
-    CPAN Ratings
-        http://cpanratings.perl.org/d/CouchDB-Helper
-
-    Search CPAN
-        http://search.cpan.org/dist/CouchDB-Helper/
-
-
-COPYRIGHT AND LICENCE
-
-Copyright (C) 2010 Calle Dybedahl
-
-This program is free software; you can redistribute it and/or modify it
-under the same terms as Perl itself.
-
+The code will look for a directory called "couchdb", and proceed downwards
+from there. The first level under couchdb is the name of the database (in the
+CouchDB instance specified in the couchdb_load.PL file). Under that is
+'_design', which is static and there as a reminder and space for future
+expansion. Under that is the second part of the id of the design document.
+Then comes the actual contents of that design document. The _rev contain the
+revision provided when saving the document, and will be taken care of
+automatically by the code. Everything else in this directory should be other
+directories. They will be saved under what names they have. They should
+contain only files with the suffix ".js". Those files will be stored in the
+with keys consisting of their names with the ".js" stripped off, and the
+files' contents as values. 
