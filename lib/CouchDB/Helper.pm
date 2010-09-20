@@ -23,13 +23,13 @@ our @EXPORT = qw[install_to_couchdb];
 
 sub data_for_database {
     my $topdir = shift;
-    
+
     my %result;
     my @toplevel = read_dir($topdir . '/_design');
 
     foreach my $d (@toplevel) {
         my @files = read_dir($topdir . '/_design/' . $d);
-        my $name = '/_design/' . $d;
+        my $name  = '_design/' . $d;
         foreach my $f (@files) {
             my $path = $topdir . '/_design/' . $d . '/' . $f;
             if ($f eq '_rev') {
@@ -44,32 +44,71 @@ sub data_for_database {
                             $result{$name}{$f}{$v}{$part} =
                               slurp($path . '/' . $v . '/' . $part . '.js');
                         } else {
-                            die "Don't know what to do with non-JavaScript here: $part.";
+                            die
+"Don't know what to do with non-JavaScript here: $part.";
                         }
                     }
                 }
             }
         }
     }
-    
+
     return \%result;
 }
 
 sub read_all {
     my $topdir = cwd();
     my %result;
-    
+
     foreach my $db (read_dir($topdir . '/couchdb')) {
-        $result{$db} = data_for_database($topdir . '/couchdb/' . $db)
+        $result{$db} = data_for_database($topdir . '/couchdb/' . $db);
     }
 
     return \%result;
 }
 
+sub store_to_db {
+    my ($conn, $dbname, $alldata) = @_;
+    my $db = $conn->newDB($dbname);
+
+    if (!$conn->dbExists($dbname)) {
+        $db->create;
+    }
+
+    foreach my $view (keys %$alldata) {
+        my $doc;
+        my $data = $alldata->{$view};
+
+        if (defined($data->{_rev}) and $data->{_rev}) {
+            $doc = $db->newDoc($view, $data->{_rev})->retrieve;
+            delete $data->{_rev};
+            $doc->data($data);
+            $doc->update;
+        } else {
+            delete $data->{_rev} if exists $data->{_rev};
+            $doc = $db->newDoc($view, undef, $data);
+            $doc->create;
+        }
+
+        my $topdir   = cwd();
+        my $filename = $topdir . '/couchdb/' . $dbname . '/' . $view . '/_rev';
+        open my $fh, '>', $filename
+          or die "Failed to open _rev file $filename: $!\n";
+        print $fh $doc->rev;
+        close $fh;
+    }
+}
+
 sub install_to_couchdb {
     my $url = shift;
     my $res = read_all();
-    print Dumper($res);
+
+    my $conn = CouchDB::Client->new(uri => $url);
+    die "Failed to connect to database.\n" unless $conn->testConnection;
+
+    foreach my $db (keys %$res) {
+        store_to_db($conn, $db, $res->{$db});
+    }
 }
 
 =head1 SYNOPSIS
