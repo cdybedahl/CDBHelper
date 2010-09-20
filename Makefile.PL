@@ -13,6 +13,7 @@ WriteMakefile(
     PREREQ_PM => {
         'Test::More' => 0,
         'CouchDB::Client' => 0.09,
+        'File::Slurp' => 0,
     },
     dist                => { COMPRESS => 'gzip -9f', SUFFIX => 'gz', },
     clean               => { FILES => 'CouchDB-Helper-*' },

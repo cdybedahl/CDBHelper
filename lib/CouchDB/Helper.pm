@@ -6,6 +6,9 @@ use strict;
 use Cwd;
 
 use CouchDB::Client;
+use File::Slurp qw[slurp read_dir];
+
+use Data::Dumper;
 
 =head1 NAME
 
@@ -18,15 +21,55 @@ our $VERSION = '0.01';
 use base 'Exporter';
 our @EXPORT = qw[install_to_couchdb];
 
-my $topdir = cwd();
+sub data_for_database {
+    my $topdir = shift;
+    
+    my %result;
+    my @toplevel = read_dir($topdir . '/_design');
+
+    foreach my $d (@toplevel) {
+        my @files = read_dir($topdir . '/_design/' . $d);
+        my $name = '/_design/' . $d;
+        foreach my $f (@files) {
+            my $path = $topdir . '/_design/' . $d . '/' . $f;
+            if ($f eq '_rev') {
+                $result{$name}{'_rev'} = slurp($path);
+                chomp($result{$name}{'_rev'});
+            } else {
+                my @views = read_dir($path);
+                foreach my $v (@views) {
+                    foreach my $part (read_dir($path . '/' . $v)) {
+                        if ($part =~ /\.js$/) {
+                            $part =~ s/\.js$//;
+                            $result{$name}{$f}{$v}{$part} =
+                              slurp($path . '/' . $v . '/' . $part . '.js');
+                        } else {
+                            die "Don't know what to do with non-JavaScript here: $part.";
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    return \%result;
+}
+
+sub read_all {
+    my $topdir = cwd();
+    my %result;
+    
+    foreach my $db (read_dir($topdir . '/couchdb')) {
+        $result{$db} = data_for_database($topdir . '/couchdb/' . $db)
+    }
+
+    return \%result;
+}
 
 sub install_to_couchdb {
     my $url = shift;
-
-    opendir my $design, $topdir . '/_design'
-      or die "Failed to open $topdir/_design: $!\n";
-    my @toplevel = grep { /^\w+$/ } readdir($design);
-
+    my $res = read_all();
+    print Dumper($res);
 }
 
 =head1 SYNOPSIS
