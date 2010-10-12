@@ -8,8 +8,6 @@ use Cwd;
 use CouchDB::Client;
 use File::Slurp qw[slurp read_dir];
 
-use Data::Dumper;
-
 =head1 NAME
 
 CouchDB::Helper - make developing with CouchDB easier
@@ -21,10 +19,14 @@ our $VERSION = '0.01';
 use base 'Exporter';
 our @EXPORT = qw[install_to_couchdb];
 
+use File::stat;
+
 sub data_for_database {
     my $topdir = shift;
 
     my %result;
+    my $revtime = 0;
+    my $datatime = 0;
     my @toplevel = read_dir($topdir . '/_design');
 
     foreach my $d (@toplevel) {
@@ -34,6 +36,7 @@ sub data_for_database {
             my $path = $topdir . '/_design/' . $d . '/' . $f;
             if ($f eq '_rev') {
                 $result{$name}{'_rev'} = slurp($path);
+                $revtime = (stat($path))->mtime;
                 chomp($result{$name}{'_rev'});
             } else {
                 my @views = read_dir($path);
@@ -43,6 +46,8 @@ sub data_for_database {
                             $part =~ s/\.js$//;
                             $result{$name}{$f}{$v}{$part} =
                               slurp($path . '/' . $v . '/' . $part . '.js');
+                              my $t = (stat($path . '/' . $v . '/' . $part . '.js'))->mtime;
+                              $datatime = $t if $t > $datatime;
                         } else {
                             die
 "Don't know what to do with non-JavaScript here: $part.";
@@ -53,15 +58,20 @@ sub data_for_database {
         }
     }
 
-    return \%result;
+    return (\%result, ($datatime > $revtime));
 }
 
 sub read_all {
     my $topdir = cwd();
     my %result;
 
+    unless(-d $topdir . '/couchdb') {
+        exit(0)
+    }
+
     foreach my $db (read_dir($topdir . '/couchdb')) {
-        $result{$db} = data_for_database($topdir . '/couchdb/' . $db);
+        my ($res, $do_upload) = data_for_database($topdir . '/couchdb/' . $db);
+        $result{$db} = $res if $do_upload;
     }
 
     return \%result;
@@ -89,6 +99,7 @@ sub store_to_db {
             $doc = $db->newDoc($view, undef, $data);
             $doc->create;
         }
+        print "Installed to " . $db->uriName . '/' . $doc->uriName . "\n";
 
         my $topdir   = cwd();
         my $filename = $topdir . '/couchdb/' . $dbname . '/' . $view . '/_rev';
