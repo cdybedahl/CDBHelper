@@ -20,105 +20,145 @@ use base 'Exporter';
 our @EXPORT = qw[install_to_couchdb];
 
 use File::stat;
+use File::Slurp;
+use Cwd;
 
-sub data_for_database {
-    my $topdir = shift;
+sub get_content_of {
+    my $name = shift;
+    my $stat = stat($name);
 
-    my %result;
-    my $revtime = 0;
-    my $datatime = 0;
-    my @toplevel = read_dir($topdir . '/_design');
+    if (-f $name) {
+        return {
+            stat    => $stat,
+            content => scalar(read_file($name)),
+            type    => 'file',
+        };
+    } elsif (-d $name) {
+        my %res;
+        my $cwd = cwd();
+        opendir my $d, $name or die "$name: $!";
+        $res{stat} = $stat;
+        $res{type} = 'dir';
+        chdir($name);
+        foreach my $f (grep { $_ ne '.' and $_ ne '..' } readdir $d) {
+            $res{content}{$f} = get_content_of($f);
+        }
+        chdir($cwd);
+        return \%res;
+    } else {
+        return {
+            stat    => $stat,
+            content => '<non-handled file type>',
+            type    => 'other',
+        };
+    }
+}
 
-    foreach my $d (@toplevel) {
-        my @files = read_dir($topdir . '/_design/' . $d);
-        my $name  = '_design/' . $d;
-        foreach my $f (@files) {
-            my $path = $topdir . '/_design/' . $d . '/' . $f;
-            if ($f eq '_rev') {
-                $result{$name}{'_rev'} = slurp($path);
-                $revtime = (stat($path))->mtime;
-                chomp($result{$name}{'_rev'});
-            } else {
-                my @views = read_dir($path);
-                foreach my $v (@views) {
-                    foreach my $part (read_dir($path . '/' . $v)) {
-                        if ($part =~ /\.js$/) {
-                            $part =~ s/\.js$//;
-                            $result{$name}{$f}{$v}{$part} =
-                              slurp($path . '/' . $v . '/' . $part . '.js');
-                              my $t = (stat($path . '/' . $v . '/' . $part . '.js'))->mtime;
-                              $datatime = $t if $t > $datatime;
-                        } else {
-                            die
-"Don't know what to do with non-JavaScript here: $part.";
-                        }
-                    }
-                }
-            }
+sub max_mtime {
+    my $tree = shift;
+    my $max  = 0;
+
+    foreach my $t (keys %$tree) {
+        next if $t eq '_rev';
+        if ($tree->{$t}{type} eq 'file') {
+            $max = $tree->{$t}{stat}->mtime if $tree->{$t}{stat}->mtime > $max;
+        } elsif ($tree->{$t}{type} eq 'dir') {
+            my $tmp = max_mtime($tree->{$t}{content});
+            $max = $tmp if $tmp > $max;
         }
     }
 
-    return (\%result, ($datatime > $revtime));
+    return $max;
 }
 
-sub read_all {
-    my $topdir = cwd();
-    my %result;
+sub prune_tree {
+    my $node = shift;
 
-    unless(-d $topdir . '/couchdb') {
-        exit(0)
+    if (!ref($node)) {
+        return $node;
+    } elsif (ref($node) eq 'HASH') {
+        my %res;
+
+        while (my ($name, $tree) = each %$node) {
+            $name =~ s/\.js$//;
+            $res{$name} = prune_tree($tree->{content});
+        }
+        return \%res;
+    } else {
+        die "Strange node type: " . ref($node);
+    }
+}
+
+sub build_design_docs {
+    my $dir = shift || 'couchdb';
+    my $tree = get_content_of($dir);
+    my @ddocs;
+    my @res;
+
+    while (my ($database, $subtree) = each %{ $tree->{content} }) {
+        while (my ($docname, $doctree) =
+            each %{ $subtree->{content}{_design}{content} })
+        {
+            push @ddocs,
+              {
+                database => $database,
+                id       => '_design/' . $docname,
+                tree     => $doctree->{content}
+              };
+        }
     }
 
-    foreach my $db (read_dir($topdir . '/couchdb')) {
-        my ($res, $do_upload) = data_for_database($topdir . '/couchdb/' . $db);
-        $result{$db} = $res if $do_upload;
+    foreach my $doc (@ddocs) {
+        if (max_mtime($doc->{tree}) > $doc->{tree}{_rev}{stat}->mtime) {
+            push @res,
+              {
+                database => $doc->{database},
+                id       => $doc->{id},
+                content  => prune_tree($doc->{tree})
+              };
+        }
     }
 
-    return \%result;
+    return @res;
 }
 
 sub store_to_db {
-    my ($conn, $dbname, $alldata) = @_;
-    my $db = $conn->newDB($dbname);
+    my ($conn, $doc) = @_;
+    my $dbname = $doc->{database};
+    my $id     = $doc->{id};
+    my $db     = $conn->newDB($dbname);
 
     if (!$conn->dbExists($dbname)) {
         $db->create;
     }
 
-    foreach my $view (keys %$alldata) {
-        my $doc;
-        my $data = $alldata->{$view};
-
-        if (defined($data->{_rev}) and $data->{_rev}) {
-            $doc = $db->newDoc($view, $data->{_rev})->retrieve;
-            delete $data->{_rev};
-            $doc->data($data);
-            $doc->update;
-        } else {
-            delete $data->{_rev} if exists $data->{_rev};
-            $doc = $db->newDoc($view, undef, $data);
-            $doc->create;
-        }
-        print "Installed to " . $db->uriName . '/' . $doc->uriName . "\n";
-
-        my $topdir   = cwd();
-        my $filename = $topdir . '/couchdb/' . $dbname . '/' . $view . '/_rev';
-        open my $fh, '>', $filename
-          or die "Failed to open _rev file $filename: $!\n";
-        print $fh $doc->rev;
-        close $fh;
+    my $dbdoc = $db->newDoc($id, $doc->{content}{_rev});
+    if ($db->docExists($id)) {
+        $dbdoc->retrieve;
+    } else {
+        $dbdoc->create;
     }
+    $dbdoc->data($doc->{content});
+    print "Uploading " . $dbname . '/' . $id . "\n";
+    $dbdoc->update;
+
+    my $topdir   = cwd();
+    my $filename = $topdir . '/couchdb/' . $dbname . '/' . $id . '/_rev';
+    open my $fh, '>', $filename
+      or die "Failed to open _rev file $filename: $!\n";
+    print $fh $dbdoc->rev;
+    close $fh;
 }
 
 sub install_to_couchdb {
-    my $url = shift;
-    my $res = read_all();
+    my $url   = shift;
+    my @ddocs = build_design_docs();
 
     my $conn = CouchDB::Client->new(uri => $url);
     die "Failed to connect to database.\n" unless $conn->testConnection;
 
-    foreach my $db (keys %$res) {
-        store_to_db($conn, $db, $res->{$db});
+    foreach my $doc (@ddocs) {
+        store_to_db($conn, $doc);
     }
 }
 
