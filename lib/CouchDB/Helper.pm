@@ -109,7 +109,9 @@ sub build_design_docs {
     }
 
     foreach my $doc (@ddocs) {
-        if (max_mtime($doc->{tree}) > $doc->{tree}{_rev}{stat}->mtime) {
+        if (!($doc->{tree}{_rev})
+            or max_mtime($doc->{tree}) > $doc->{tree}{_rev}{stat}->mtime)
+        {
             push @res,
               {
                 database => $doc->{database},
@@ -151,10 +153,18 @@ sub store_to_db {
 }
 
 sub install_to_couchdb {
-    my $url   = shift;
+    my $url      = shift || $ENV{COUCHDB_URL} || 'http://127.0.0.1:5984';
+    my $username = shift || $ENV{COUCHDB_USERNAME};
+    my $password = shift || $ENV{COUCHDB_PASSWORD};
+    my $realm    = shift || $ENV{COUCHDB_REALM};
     my @ddocs = build_design_docs();
 
-    my $conn = CouchDB::Client->new(uri => $url);
+    my $conn = CouchDB::Client->new(
+        uri      => $url,
+        username => $username,
+        password => $password,
+        realm    => $realm
+    );
     die "Failed to connect to database.\n" unless $conn->testConnection;
 
     foreach my $doc (@ddocs) {
@@ -175,7 +185,17 @@ exporting it by default seems reasonable.
 
 =head1 USAGE
 
-install_to_couchdb($url_to_couchdb);
+install_to_couchdb([$url_to_couchdb, [$username, $password, [$realm]]]);
+
+All of the parameters are optional. If none are given, the environment
+contents of the variables COUCHDB_URL, COUCHDB_USERNAME, COUCHDB_PASSWORD and
+COUCHDB_REALM will be used as default values. If any of them are not set,
+COUCHDB_URL will default to 'http://127.0.0.1:5984/' and the others to
+nothing.
+
+You only ever need to specify the realm if you're talking to a CouchDB
+instance where the HTTP Basic Auth realm has been set to something other than
+the standard value.
 
 =head1 AUTHOR
 
