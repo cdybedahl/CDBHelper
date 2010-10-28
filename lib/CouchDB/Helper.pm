@@ -109,9 +109,7 @@ sub build_design_docs {
     }
 
     foreach my $doc (@ddocs) {
-        if (!($doc->{tree}{_rev})
-            or max_mtime($doc->{tree}) > $doc->{tree}{_rev}{stat}->mtime)
-        {
+        if (!defined($doc->{tree}{_rev}) or max_mtime($doc->{tree}) > $doc->{tree}{_rev}{stat}->mtime) {
             push @res,
               {
                 database => $doc->{database},
