@@ -163,7 +163,10 @@ sub install_to_couchdb {
         password => $password,
         realm    => $realm
     );
-    die "Failed to connect to database.\n" unless $conn->testConnection;
+    unless ($conn->testConnection) {
+        warn "Failed to connect to database. Design document upload not performed.\n";
+        exit(0);
+    }
 
     foreach my $doc (@ddocs) {
         store_to_db($conn, $doc);
