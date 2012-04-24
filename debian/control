@@ -1,0 +1,18 @@
+Source: libcouchdb-helper-perl
+Section: perl
+Priority: optional
+Build-Depends: debhelper (>= 7)
+Build-Depends-Indep: perl, libfile-slurp-perl,
+  libcouchdb-client-perl (>= 0.10), libfile-slurp-perl
+Maintainer: Calle Dybedahl <calle@>
+Standards-Version: 3.8.3
+Homepage: http://search.cpan.org/dist/CouchDB-Helper/
+
+Package: libcouchdb-helper-perl
+Architecture: all
+Depends: ${perl:Depends}, ${misc:Depends}, libfile-slurp-perl,
+  libcouchdb-client-perl (>= 0.10)
+Description: make developing with CouchDB easier
+ make developing with CouchDB easier
+ .
+ This description was automagically extracted from the module by dh-make-perl.
